@@ -32,6 +32,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
+          pip install pytest-playwright
+          pip install playwright
+
+      - name: Install Playwright browsers
+        run: playwright install --with-deps
 
       - name: Run unit tests
         run: pytest
