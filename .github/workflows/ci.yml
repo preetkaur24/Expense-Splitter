@@ -28,6 +28,11 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
 
+      - name: Set fake Supabase environment variables
+        run: |
+          echo "SUPABASE_URL=http://test" >> $GITHUB_ENV
+          echo "SUPABASE_KEY=test_key" >> $GITHUB_ENV
+
       - name: Run unit tests
         run: pytest
 
