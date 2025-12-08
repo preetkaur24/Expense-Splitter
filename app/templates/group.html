@@ -16,6 +16,23 @@
   <ul id="group-members" style="padding-left:18px; margin-top:4px;">
     <li class="muted">Loading members…</li>
   </ul>
+
+  <hr style="margin: 24px 0;">
+
+  <h3>AI Trip Summary</h3>
+
+  <!-- Status/error messages -->
+  <p id="ai-summary-msg" class="muted" style="min-height:20px;"></p>
+
+  <!-- Summary output -->
+  <div id="ai-summary-box"
+       style="display:none; border:1px solid #ccc; padding:12px; border-radius:6px;">
+  </div>
+
+  <button id="ai-summary-btn" class="btn" style="margin-top:10px;">
+    Generate Trip Summary
+  </button>
+
 </section>
 {% endblock %}
 

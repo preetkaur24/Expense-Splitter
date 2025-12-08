@@ -8,7 +8,12 @@ from postgrest.exceptions import APIError
 from ..core.supabase_client import supabase
 from .auth import get_current_user
 
-# All group APIs live under /api/groups
+# NEW: OpenAI client import
+from openai import OpenAI
+import os
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
 
@@ -16,18 +21,15 @@ class CreateGroup(BaseModel):
     """Payload for creating a group from the add group form."""
     name: str
     description: Optional[str] = None
-    # Friend link row ids selected in the form (do not include current user here)
     member_ids: List[str] = []
 
 
 @router.post("/", summary="Create a new group")
 def create_group(payload: CreateGroup, user=Depends(get_current_user)):
-    """Create a group and include the current user as a member."""
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Group name cannot be empty")
 
-    # Step 1: Convert friend_links row ids into real friend UUIDs
     friend_uuids: List[str] = []
     for row_id in payload.member_ids:
         try:
@@ -39,12 +41,10 @@ def create_group(payload: CreateGroup, user=Depends(get_current_user)):
                 .execute()
             )
         except APIError:
-            # If lookup fails for any selected friend link, treat as bad request
             raise HTTPException(
                 status_code=400, detail=f"Friend id {row_id} not found"
             )
 
-        # res.data is a dict like {"friend_id": "<uuid>"}
         data = res.data or {}
         friend_id = data.get("friend_id")
         if not friend_id:
@@ -53,7 +53,6 @@ def create_group(payload: CreateGroup, user=Depends(get_current_user)):
             )
         friend_uuids.append(friend_id)
 
-    # Step 2: Build final members list with current user and selected friends
     all_members = [user["id"], *friend_uuids]
     members_unique = list({m for m in all_members if m})
 
@@ -66,10 +65,8 @@ def create_group(payload: CreateGroup, user=Depends(get_current_user)):
     try:
         res = supabase.table("groups").insert(insert_data).execute()
     except APIError as e:
-        # Convert Supabase error to HTTP 500 so frontend sees failure
         raise HTTPException(status_code=500, detail=str(e))
 
-    # res.data is usually a list with the inserted row
     data = res.data
     if isinstance(data, list):
         if not data:
@@ -83,7 +80,6 @@ def create_group(payload: CreateGroup, user=Depends(get_current_user)):
 
 @router.get("/", summary="List groups for current user")
 def get_groups_for_current_user(user=Depends(get_current_user)):
-    """Return all groups where the current user is a member."""
     try:
         res = (
             supabase.table("groups")
@@ -100,7 +96,6 @@ def get_groups_for_current_user(user=Depends(get_current_user)):
 
 @router.get("/user/{user_id}", summary="Get groups for a given user id")
 def get_user_groups(user_id: str):
-    """Return all groups where the given user id is a member."""
     try:
         res = (
             supabase.table("groups")
@@ -117,7 +112,6 @@ def get_user_groups(user_id: str):
 
 @router.get("/{group_id}", summary="Get group details")
 def get_group(group_id: str):
-    """Return a single group record by id."""
     try:
         res = (
             supabase.table("groups")
@@ -137,7 +131,6 @@ def get_group(group_id: str):
 
 @router.get("/{group_id}/members", summary="Get members of a group")
 def get_group_members(group_id: str):
-    """Return user records for all members in a group."""
     try:
         group_res = (
             supabase.table("groups")
@@ -165,3 +158,57 @@ def get_group_members(group_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"ok": True, "members": res.data or []}
+
+
+# =========================================================
+# NEW ROUTE: Generate Trip Summary
+# =========================================================
+
+@router.post("/{group_id}/generate_summary", summary="Generate AI trip summary")
+def generate_trip_summary(group_id: str):
+    """Generate a concise trip summary using the group's description."""
+
+    # Load group description
+    try:
+        res = (
+            supabase.table("groups")
+            .select("name, description")
+            .eq("id", group_id)
+            .single()
+            .execute()
+        )
+    except APIError:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    group = res.data or {}
+    description = (group.get("description") or "").strip()
+
+    if not description:
+        raise HTTPException(
+            status_code=400,
+            detail="This group has no description to summarize."
+        )
+
+    # Construct AI prompt
+    prompt = (
+        "Write a concise and friendly trip summary (3–5 sentences) based on the "
+        "following description:\n\n"
+        f"{description}"
+    )
+
+    # Call OpenAI
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        summary = response.choices[0].message.content.strip()
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="AI service error: unable to generate summary."
+        )
+
+    return {"summary": summary}

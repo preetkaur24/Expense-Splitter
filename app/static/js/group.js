@@ -1,5 +1,5 @@
 // FILE: static/js/group.js
-// Read only group detail page.
+// Read-only group detail page.
 
 async function fetchJson(url, options = {}) {
   const res = await fetch(url, {
@@ -73,4 +73,51 @@ async function initGroupPage() {
   }
 }
 
-document.addEventListener("DOMContentLoaded", initGroupPage);
+// ---- AI SUMMARY FEATURE ----
+
+async function setupAISummary(groupId) {
+  const btn = document.getElementById("ai-summary-btn");
+  const msg = document.getElementById("ai-summary-msg");
+  const box = document.getElementById("ai-summary-box");
+
+  if (!btn) return;
+
+  btn.addEventListener("click", async () => {
+    msg.textContent = "Generating summary…";
+    box.style.display = "none";
+    box.textContent = "";
+
+    try {
+      const res = await fetch(`/api/groups/${groupId}/generate_summary`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Accept": "application/json" }
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        msg.textContent = data.detail || "Error generating summary.";
+        return;
+      }
+
+      msg.textContent = "";
+      box.textContent = data.summary;
+      box.style.display = "block";
+
+    } catch (err) {
+      msg.textContent = "Unexpected error accessing AI service.";
+      console.error(err);
+    }
+  });
+}
+
+// On page load
+document.addEventListener("DOMContentLoaded", async () => {
+  await initGroupPage();
+
+  const params = new URLSearchParams(window.location.search);
+  const groupId = params.get("group_id");
+
+  setupAISummary(groupId);
+});
