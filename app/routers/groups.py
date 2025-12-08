@@ -1,8 +1,8 @@
 import os
-from fastapi import APIRouter, Depends, HTTPException
-from supabase import Client
-from app.dependencies import get_supabase
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from ..core.supabase_client import supabase
 
 try:
     from openai import OpenAI
@@ -21,7 +21,7 @@ class TripSummaryResponse(BaseModel):
 
 
 # ---------------------------
-# Helper: Lazy-initialize OpenAI
+# Helper: OpenAI client
 # ---------------------------
 
 def get_openai_client():
@@ -45,53 +45,60 @@ def get_openai_client():
 # Routes
 # ---------------------------
 
-
 @router.get("/{group_id}")
-def get_group(group_id: int, supabase: Client = Depends(get_supabase)):
+def get_group(group_id: str):
     """Get group details."""
     result = supabase.table("groups").select("*").eq("id", group_id).single().execute()
 
-    if result.data is None:
+    if not result.data:
         raise HTTPException(status_code=404, detail="Group not found")
 
     return result.data
 
 
-@router.post("/{group_id}/generate-summary", response_model=TripSummaryResponse)
-def generate_trip_summary(group_id: int, supabase: Client = Depends(get_supabase)):
-    """
-    Generates a GenAI trip summary based on the group's description.
-    """
-    # --- 1. Fetch group ---
-    group_result = (
-        supabase.table("groups")
-        .select("id, name, description")
-        .eq("id", group_id)
-        .single()
-        .execute()
-    )
+@router.get("/{group_id}/members")
+def get_group_members(group_id: str):
+    """Return user records for all members in a group."""
+    group_result = supabase.table("groups").select("members").eq("id", group_id).single().execute()
 
-    if group_result.data is None:
+    if not group_result.data:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    member_ids = group_result.data.get("members") or []
+
+    if not member_ids:
+        return {"ok": True, "members": []}
+
+    users_result = supabase.table("users").select("id, name, full_name, username, email").in_("id", member_ids).execute()
+
+    if not users_result.data:
+        return {"ok": True, "members": []}
+
+    return {"ok": True, "members": users_result.data}
+
+
+@router.post("/{group_id}/generate-summary", response_model=TripSummaryResponse)
+def generate_trip_summary(group_id: str):
+    """Generate a trip summary using OpenAI based on the group's description."""
+
+    group_result = supabase.table("groups").select("id, name, description").eq("id", group_id).single().execute()
+
+    if not group_result.data:
         raise HTTPException(status_code=404, detail="Group not found")
 
     group = group_result.data
     description = group.get("description")
 
-    # --- 2. Handle missing description ---
     if not description or description.strip() == "":
-        raise HTTPException(
-            status_code=400,
-            detail="This group has no trip description to summarize."
-        )
+        raise HTTPException(status_code=400, detail="This group has no trip description to summarize.")
 
-    # --- 3. Call GenAI ---
     try:
         client = get_openai_client()
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You summarize group trips clearly and concisely."},
+                {"role": "system", "content": "Summarize group trips clearly and concisely."},
                 {"role": "user", "content": f"Summarize this trip: {description}"}
             ],
             max_tokens=150,
@@ -105,7 +112,4 @@ def generate_trip_summary(group_id: int, supabase: Client = Depends(get_supabase
         raise
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"GenAI error occurred: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"GenAI error occurred: {str(e)}")
