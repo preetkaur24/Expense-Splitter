@@ -8,7 +8,8 @@ async function fetchJson(url, options = {}) {
     ...options,
   });
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status} for ${url}`);
+    const text = await res.text();
+    throw new Error(`HTTP ${res.status}: ${text}`);
   }
   return res.json();
 }
@@ -51,73 +52,54 @@ async function initGroupPage() {
     return;
   }
 
-  if (!membersEl) return;
-
+  // Load members
   try {
     const data = await fetchJson(`/api/groups/${encodeURIComponent(groupId)}/members`);
     const members = Array.isArray(data?.members) ? data.members : (data.data || []);
+    membersEl.innerHTML = "";
+
     if (!members.length) {
       membersEl.innerHTML = '<li class="muted">No members found for this group.</li>';
-      return;
+    } else {
+      members.forEach(u => {
+        const li = document.createElement("li");
+        li.textContent = pickMemberName(u);
+        membersEl.appendChild(li);
+      });
     }
-
-    membersEl.innerHTML = "";
-    members.forEach(u => {
-      const li = document.createElement("li");
-      li.textContent = pickMemberName(u);
-      membersEl.appendChild(li);
-    });
   } catch (err) {
     console.error("Failed to load members:", err);
     membersEl.innerHTML = '<li class="muted">Error loading members.</li>';
   }
-}
 
-// ---- AI SUMMARY FEATURE ----
+  // ---------------------------
+  // Trip summary generation
+  // ---------------------------
 
-async function setupAISummary(groupId) {
-  const btn = document.getElementById("ai-summary-btn");
-  const msg = document.getElementById("ai-summary-msg");
-  const box = document.getElementById("ai-summary-box");
+  const summaryBtn = document.getElementById("generate-summary-btn");
+  const summaryBox = document.getElementById("trip-summary-box");
+  const loadingEl = document.getElementById("summary-loading");
 
-  if (!btn) return;
-
-  btn.addEventListener("click", async () => {
-    msg.textContent = "Generating summary…";
-    box.style.display = "none";
-    box.textContent = "";
+  summaryBtn.addEventListener("click", async () => {
+    summaryBox.style.display = "none";
+    loadingEl.style.display = "block";
+    loadingEl.textContent = "Generating summary…";
 
     try {
-      const res = await fetch(`/api/groups/${groupId}/generate_summary`, {
+      const res = await fetchJson(`/api/groups/${groupId}/generate-summary`, {
         method: "POST",
-        credentials: "include",
-        headers: { "Accept": "application/json" }
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        msg.textContent = data.detail || "Error generating summary.";
-        return;
-      }
-
-      msg.textContent = "";
-      box.textContent = data.summary;
-      box.style.display = "block";
+      summaryBox.textContent = res.summary;
+      summaryBox.style.display = "block";
 
     } catch (err) {
-      msg.textContent = "Unexpected error accessing AI service.";
-      console.error(err);
+      console.error("Summary error:", err);
+      alert("Error generating summary: " + err.message);
+    } finally {
+      loadingEl.style.display = "none";
     }
   });
 }
 
-// On page load
-document.addEventListener("DOMContentLoaded", async () => {
-  await initGroupPage();
-
-  const params = new URLSearchParams(window.location.search);
-  const groupId = params.get("group_id");
-
-  setupAISummary(groupId);
-});
+document.addEventListener("DOMContentLoaded", initGroupPage);

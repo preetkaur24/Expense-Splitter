@@ -19,19 +19,20 @@
 
   <hr style="margin: 24px 0;">
 
-  <h3>AI Trip Summary</h3>
+  <h3>Trip Summary</h3>
 
-  <!-- Status/error messages -->
-  <p id="ai-summary-msg" class="muted" style="min-height:20px;"></p>
-
-  <!-- Summary output -->
-  <div id="ai-summary-box"
-       style="display:none; border:1px solid #ccc; padding:12px; border-radius:6px;">
-  </div>
-
-  <button id="ai-summary-btn" class="btn" style="margin-top:10px;">
+  <!-- Button -->
+  <button id="generate-summary-btn" class="btn" style="margin-bottom:10px;">
     Generate Trip Summary
   </button>
+
+  <!-- Loading indicator -->
+  <p id="summary-loading" class="muted" style="display:none;">Generating summary…</p>
+
+  <!-- Output box -->
+  <div id="trip-summary-box"
+       style="background:#f7f7f7; border-radius:6px; padding:12px; display:none; margin-top:10px;">
+  </div>
 
 </section>
 {% endblock %}
